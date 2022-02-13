@@ -14,7 +14,7 @@ if [ "$1" != "" ]; then
     ( cp "$1" .config && echo "Config is $1") || exit 255;
 else
     echo "Using present kernel's built-in config"
-    zcat /proc/config.gz >.config
+    zcat /proc/config.gz >.config || {  echo "could not copy kernel config from /proc/config.gz"; exit 1; }
 fi
 
 # Apply old configuration
@@ -34,18 +34,26 @@ make install || { echo "failed to install to /boot"; exit 4; }
 # kver="$(eselect kernel list | awk '{gsub("linux-","") ; if ($3 ~ "*") print $2}')"
 # i.e. kver contains 4.9.9-gentoo
 
-# Create initramfs - used here for btrfs filesystems
-genkernel --install --btrfs --kernel-config=/usr/src/linux/.config initramfs
+# Try to determine whether root fs is on BTRFS
+mount | grep 'on / type btrfs'
+if [ $? == 0 ]; then
+    # Create initramfs - used here for btrfs filesystems
+    genkernel --install --btrfs --kernel-config=/usr/src/linux/.config initramfs
+fi
 
 # Update grub configuration
+echo "Update GRUB configuration"
+echo "========================="
 grub-mkconfig -o /boot/grub/grub.cfg
 
 # Remove old kernel versions; keep previous 2
+echo "Running eclean-kernel for housekeeping"
+echo "======================================"
 eclean-kernel -n 3
 umount /boot
 
 # Use @module-rebuild for out-of-kernel modules
-echo "Building Out of Kernel modules"
+echo "Building out-of-kernel modules"
 emerge @module-rebuild
-echo "Done"
 
+echo "Done - should be okay to reboot"
